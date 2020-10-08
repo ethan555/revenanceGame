@@ -8,6 +8,7 @@ public class CameraController : MonoBehaviour
     #region Camera
         public static CameraController instance;
         public Transform cameraTransform;
+        public Transform followTransform;
         public Vector3 zoomAmount;
         private Vector3 zoom;
         private Vector3 zoomVelocity;
@@ -40,7 +41,14 @@ public class CameraController : MonoBehaviour
     }
 
     private void Update() {
-        HandleInput();
+        if (Input.GetKeyDown(KeyCode.Escape)) {
+            followTransform = null;
+        }
+        if (followTransform != null) {
+            position = followTransform.position;
+        } else {
+            HandleInput();
+        }
 
         position.x = Mathf.Clamp(position.x, -panLimit.x, panLimit.x);
         position.z = Mathf.Clamp(position.z, -panLimit.y, panLimit.y);
