@@ -7,7 +7,7 @@ public class MeshGenerator : MonoBehaviour
 {
     public static MeshGenerator instance;
     public Navmesh navmesh;
-    public Transform navigator;
+    public Transform[] navigators;
     Mesh mesh;
 
     Vector3[] vertices;
@@ -36,7 +36,7 @@ public class MeshGenerator : MonoBehaviour
     public MeshFilter meshFilter;
     public Material material;
     public Gradient gradient;
-    private Stack<Vector3> path;
+    private Stack<Vector3>[] paths;
     private float timer = 0f;
 
     // Start is called before the first frame update
@@ -55,27 +55,45 @@ public class MeshGenerator : MonoBehaviour
         GenerateLand();
         UpdateMesh();
 
-        navmesh = new Navmesh(vertices, xSize, zSize);
+        navmesh = new Navmesh(vertices, xSize, zSize, width, length);
         // int testVertex = (9 * xSize / 10) * (9 * zSize / 10);
-        Vector3 testVertex = new Vector3(24.5f, 1f, 24.5f);
-        navigator.position = testVertex + transform.position;
-        path = navmesh.getPath(testVertex, vertices[0]);
+        Vector3 testVertex = navmesh.findClosestVertex(new Vector3(24.4f, 1f, 24.4f));
+        // Debug.Log("Closest Vertex: " + testVertex.ToString());
+        paths = new Stack<Vector3>[navigators.Length];
+        int index = 0;
+        foreach (Transform navigator in navigators)
+        {
+            navigator.position = testVertex + transform.position;
+            paths[index] = navmesh.getSmartPath(testVertex, vertices[0]);
+            index ++;
+        }
+        // path = navmesh.getPath(testVertex, vertices[0]);
     }
     
     private void Update() {
         // UpdateMesh();
 
+        int index = 0;
         if (Input.GetKeyDown("f")) {
-            path = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
+            // path = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
+            foreach (Transform navigator in navigators)
+            {
+                paths[index] = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
+                index ++;
+            }
         }
         
-        if (path == null) {return;}
+        index = 0;
         timer += Time.deltaTime;
         if (timer > .25f) {
-            if (path.Count > 0) {
-                timer = 0f;
-                Vector3 pos = path.Pop();
-                navigator.position = pos + transform.position;
+            timer = 0f;
+            foreach (Transform navigator in navigators) {
+                if (paths[index] == null) {return;}
+                if (paths[index].Count > 0) {
+                    Vector3 pos = paths[index].Pop();
+                    navigator.position = pos + transform.position;
+                }
+                index ++;
             }
         }
     }
@@ -160,12 +178,23 @@ public class MeshGenerator : MonoBehaviour
         //     Gizmos.color = mesh.colors[i];
         //     Gizmos.DrawSphere(drawPosition + vertices[i], .1f);
         // }
-        if (path == null) {return;}
-        Vector3 drawPosition = meshFilter.transform.position;
-        Vector3[] pathList = path.ToArray();
-        for (int i = 0; i < pathList.Length; i++) {
-            Gizmos.color = mesh.colors[i];
-            Gizmos.DrawSphere(drawPosition + pathList[i], .1f);
+        int index = 0;
+        foreach (Transform navigator in navigators)
+        {
+            if (paths == null || paths.Length == 0 || paths[index] == null) {return;}
+            Vector3 drawPosition = meshFilter.transform.position;
+            Vector3[] pathList = paths[index].ToArray();
+            Gizmos.color = Color.red;
+            for (int i = 0; i < pathList.Length; i++) {
+                // Gizmos.DrawSphere(drawPosition + pathList[i], .1f);
+                if (i > 0) {
+                    Gizmos.DrawLine(drawPosition + pathList[i-1], drawPosition + pathList[i]);
+                }
+                if (i > pathList.Length - 20) {
+                    Gizmos.color = Color.green;
+                }
+            }
+            index++;
         }
         
     }
@@ -177,9 +206,13 @@ public class Navmesh {
         private (int, int) position;
         public float cost {get; set;}
         public Cell parent {get; set;}
+        public List<Cell> neighborsHighRes {get; set;}
+        public List<Cell> neighborsLowRes {get; set;}
         public Cell(Vector3 vertex_, (int, int) position_) {
             vertex = vertex_;
             position = position_;
+            neighborsHighRes = null;
+            neighborsLowRes = null;
         }
 
         public Vector3 getVertex() {
@@ -189,10 +222,9 @@ public class Navmesh {
         public (int, int) getPosition() {
             return position;
         }
-
-        public float getCost(Cell a) {
-            return Mathf.Max(a.vertex.y - vertex.y, 0f) * 3f + 1f;
-        }
+    }
+    private float getCost(Cell a, Cell b) {
+        return Mathf.Max(b.getVertex().y - a.getVertex().y, 0f) * heightCost + 1f;
     }
 
     private Dictionary<(int, int), Cell> cells;
@@ -200,111 +232,188 @@ public class Navmesh {
     private Stack<Cell> toVisit;
     private float prediction;
     private float epsilon;
+    public int resolutionFactor = 8;
+    public int highResolutionFactor = 2;
+    private int xSize, zSize;
+    private float width, length;
+    // Search Parameters
+    private int searchLimit = 1000;
+    private int intFactor = 1000;
+    private float epsilonFudge = .05f;
+    private int xFudge = 500; // for resolution factor 10
+    private int xFudgeHighRes = 250; // for resolution factor 5
+    private int zFudge = 500; // for resolution factor 10
+    private int zFudgeHighRes = 250; // for resolution factor 5
+    private float heightCost = 3f;
+    private int highResPathLength = 10;
 
-    public Navmesh(Vector3[] vertices, int xSize, int zSize) {
+    public Navmesh(Vector3[] vertices, int xSize_, int zSize_, float width_, float length_) {
+        xSize = xSize_;
+        zSize = zSize_;
+        width = width_;
+        length = length_;
+
+        xFudge = (int) Mathf.Round(width * resolutionFactor * intFactor);
+        xFudgeHighRes = (int) Mathf.Round(width * highResolutionFactor * intFactor);
+
+        zFudge = (int) Mathf.Round(length * resolutionFactor * intFactor);
+        zFudgeHighRes = (int) Mathf.Round(length * highResolutionFactor * intFactor);
+
         cells = new Dictionary<(int, int), Cell>();
-        // foreach (Vector3 vertex in vertices) {
-        for (int i = 0; i < vertices.Length; i += zSize * 10) {
-            for (int j = 0; j < zSize; j += 10) {
+        // int index = 0;
+        for (int i = 0; i < vertices.Length; i += zSize * highResolutionFactor) {
+            for (int j = 0; j < zSize; j += highResolutionFactor) {//, index++) {
                 Vector3 vertex = vertices[i + j];
                 (int, int) position = vector3ToTuple(vertex);
                 cells.Add(position, new Cell(vertex, position));
+                // if (index < 10) {
+                    // Debug.Log("Position: " + position.ToString() + " Vertex: " + vertex.ToString());
+                // }
             }
         }
     }
 
     public (int, int) vector2ToTuple(Vector2 vertex) {
-        return ((int)Mathf.Round(vertex.x * 1000), (int)Mathf.Round(vertex.y * 1000));
+        return ((int)Mathf.Round(vertex.x * intFactor), (int)Mathf.Round(vertex.y * intFactor));
     }
 
     public (int, int) vector3ToTuple(Vector3 vertex) {
-        return ((int)Mathf.Round(vertex.x * 1000), (int)Mathf.Round(vertex.z * 1000));
+        return ((int)Mathf.Round(vertex.x * intFactor), (int)Mathf.Round(vertex.z * intFactor));
+    }
+
+    public Vector3 findClosestVertex(Vector3 vertex) {
+        float resolutionFixX = ((float)xFudge) / ((float)intFactor);
+        float resolutionFixZ = ((float)zFudge) / ((float)intFactor);
+        return new Vector3(
+                Mathf.Round(Mathf.Clamp(vertex.x, 0, xSize * width) / resolutionFixX) * resolutionFixX,
+                vertex.y,
+                Mathf.Round(Mathf.Clamp(vertex.z, 0, zSize * length) / resolutionFixZ) * resolutionFixZ
+            );
     }
 
     private float heuristic(Cell a, Cell b) {
         Vector3 aVertex = a.getVertex();
         Vector3 bVertex = b.getVertex();
-        float manhattanDistance = Mathf.Abs(aVertex.x - bVertex.x) + Mathf.Abs(aVertex.z - bVertex.z);
-        float verticalDistance = Mathf.Abs(aVertex.y - bVertex.y);
-        return manhattanDistance + verticalDistance;
+        float heuristicDistance = Vector3.Distance(aVertex, bVertex);
+        float verticalDistance = 0f;
+        return heuristicDistance + verticalDistance;
     }
 
-    private Cell[] getCellNeighbors((int, int) vertex) {
+    private List<Cell> getCellNeighbors((int, int) vertex) {
         if (!cells.ContainsKey(vertex)) {return null;}
-        Cell[] neighbors = new Cell[8];
-        int index = 0;
-        for (int i = -fudge; i <= fudge; i += fudge) {
-            for (int j = -fudge; j <= fudge; j += fudge) {
+        Cell baseCell = cells[vertex];
+        if (baseCell.neighborsLowRes != null) {
+            return baseCell.neighborsLowRes;
+        }
+        List<Cell> neighbors = new List<Cell>();
+        // int index = 0;
+        for (int i = -xFudge; i <= xFudge; i += xFudge) {
+            for (int j = -zFudge; j <= zFudge; j += zFudge) {
                 if (i == 0 && j == 0) continue;
                 (int, int) neighbor = (vertex.Item1 + i, vertex.Item2 + j);
                 if (!cells.ContainsKey(neighbor)) {
-                    index ++;
+                    // index ++;
                     continue;
                 }
-                neighbors[index++] = cells[neighbor];
+                // neighbors[index++] = cells[neighbor];
+                neighbors.Add(cells[neighbor]);
             }
         }
+        baseCell.neighborsLowRes = neighbors;
         return neighbors;
     }
 
-    private int searchLimit = 1000;
-    private float epsilonFudge = .05f;
-    private int fudge = 500;
+    private List<Cell> getCellNeighborsHighRes((int, int) vertex) {
+        if (!cells.ContainsKey(vertex)) {return null;}
+        Cell baseCell = cells[vertex];
+        if (baseCell.neighborsHighRes != null) {
+            return baseCell.neighborsHighRes;
+        }
+        List<Cell> neighbors = new List<Cell>();
+        // int index = 0;
+        for (int i = -xFudgeHighRes; i <= xFudgeHighRes; i += xFudgeHighRes) {
+            for (int j = -zFudgeHighRes; j <= zFudgeHighRes; j += zFudgeHighRes) {
+                if (i == 0 && j == 0) continue;
+                (int, int) neighbor = (vertex.Item1 + i, vertex.Item2 + j);
+                if (!cells.ContainsKey(neighbor)) {
+                    // index ++;
+                    continue;
+                }
+                // neighbors[index++] = cells[neighbor];
+                neighbors.Add(cells[neighbor]);
+            }
+        }
+        baseCell.neighborsHighRes = neighbors;
+        return neighbors;
+    }
+
+    public Stack<Vector3> getSmartPath(Vector3 start_, Vector3 end_) {
+        Vector3[] path = getPath(findClosestVertex(start_), findClosestVertex(end_)).ToArray();
+        // Debug.Log("PATH: " + path.Length.ToString());
+        if (path.Length < highResPathLength) {
+            return getPath(start_, end_, true);
+        }
+        Vector3 highResStart = path[path.Length - highResPathLength];
+        Vector3[] highResPath = getPath(highResStart, end_, true).ToArray();
+        // Debug.Log("HighResPath: " + highResPath.Length.ToString());
+
+        Stack<Vector3> smartPath = new Stack<Vector3>();
+        for (int i = highResPath.Length - 1; i >= 0; i--) {
+            smartPath.Push(highResPath[i]);
+        }
+        for (int i = path.Length - (highResPathLength + 1); i >= 0; i--) {
+            smartPath.Push(path[i]);
+        }
+        // Debug.Log("SmartPath: " + smartPath.Count.ToString());
+        return smartPath;
+    }
+
     // public Stack<Vector3> getPath(Vector3 start_, Vector3 end_) {
-    public Stack<Vector3> getPath(Vector3 start_, Vector3 end_) {
+    public Stack<Vector3> getPath(Vector3 start_, Vector3 end_, bool highRes = false) {
         (int, int) startPos = vector3ToTuple(start_);
         (int, int) endPos = vector3ToTuple(end_);
         Cell start = cells.ContainsKey(startPos) ? cells[startPos] : null;
         Cell end = cells.ContainsKey(endPos) ? cells[endPos] : null;
-        if (start == null || end == null) return null;
+        // Debug.Log("StartPOS: " + startPos.ToString() + " ENDPOS: " + endPos.ToString());
+        // Debug.Log("Start: " + (start == null).ToString() + " END: " + (end == null).ToString());
+        if (start == null || end == null) {
+            return null;
+        }
 
         Stack<Vector3> path = new Stack<Vector3>();
         bool finished = false;
         int limit = 0;
-        prediction = heuristic(start, end) + 5;
-        epsilon = float.PositiveInfinity;
         visited = new HashSet<Cell>();
         toVisit = new Stack<Cell>();
         toVisit.Push(start);
-        bool started = false;
+        prediction = heuristic(start, end);
+        epsilon = float.PositiveInfinity;
         start.cost = 0;
         start.parent = null;
         while (!finished && limit < searchLimit) {
+            limit ++;
             Cell currentCell = toVisit.Pop();
-            if (currentCell == null) {
-            }
-            if (start == null) {
-            }
-            if (currentCell.Equals(start) && started) {
-                // Restart pathfinding, IDA*
-                visited = new HashSet<Cell>();
-                toVisit = new Stack<Cell>();
-                toVisit.Push(start);
-                started = false;
-                prediction = epsilon;
-                epsilon = float.PositiveInfinity;
-                continue;
-            }
+            visited.Add(currentCell);
             if (currentCell.Equals(end)) {
                 // Found it! Build the path
                 finished = true;
                 path = buildPath(end);
                 continue;
             }
-            Cell[] neighbors = getCellNeighbors(currentCell.getPosition());
+            List<Cell> neighbors = highRes ? getCellNeighborsHighRes(currentCell.getPosition()) : getCellNeighbors(currentCell.getPosition());
             float bestCost = float.PositiveInfinity;
             Cell bestNeighbor = null;
             foreach (Cell neighbor in neighbors) {
                 // Find best neighbor
                 if (neighbor == null || visited.Contains(neighbor)) continue;
-                float potential = currentCell.getCost(neighbor) + heuristic(neighbor, end);
+                float potential = getCost(currentCell, neighbor) + heuristic(neighbor, end);
                 if (potential <= prediction) {
                     if (potential < bestCost) {
                         bestNeighbor = neighbor;
                         bestCost = potential;
                     }
                 } else {
-                    if (potential < epsilon - epsilonFudge) {
+                    if (potential < epsilon) {
                         epsilon = potential;
                     }
                 }
@@ -315,31 +424,46 @@ public class Navmesh {
                 toVisit.Push(bestNeighbor);
             } else {
                 // Backtrack
-                toVisit.Push(currentCell.parent);
+                if (!currentCell.Equals(start)) {
+                    toVisit.Push(currentCell.parent);
+                } else {
+                    // Restart pathfinding, IDA*
+                    visited = new HashSet<Cell>();
+                    toVisit = new Stack<Cell>();
+                    toVisit.Push(start);
+                    if (epsilon != float.PositiveInfinity) {
+                        prediction = epsilon;
+                    } else {
+                        break;
+                    }
+                    epsilon = float.PositiveInfinity;
+                    continue;
+                }
             }
-            limit ++;
         }
+        // Debug.Log(limit);
         return path;
     }
 
     public Stack<Vector3> getRandomPath(Vector3 start_, int xSize, int zSize, float width, float length) {
-        (int, int) startPos = vector3ToTuple(start_);
+        (int, int) startPos = vector3ToTuple(findClosestVertex(start_));
         Cell start = cells.ContainsKey(startPos) ? cells[startPos] : null;
 
         (int, int) endPos = vector2ToTuple(new Vector2(
-            Random.Range(0, (xSize - 2) / 10)*10 * width,
-            Random.Range(0, (zSize - 2) / 10)*10 * length
+            Random.Range(0, (xSize - 2) / resolutionFactor)*resolutionFactor * width,
+            Random.Range(0, (zSize - 2) / resolutionFactor)*resolutionFactor * length
         ));
+        // Debug.Log(endPos);
         Cell end = cells.ContainsKey(endPos) ? cells[endPos] : null;
         if (end == null) {
         } else if (end.Equals(start)) {
             endPos = vector2ToTuple(new Vector2(
-                ((xSize - 1) / 10)*10 * width,
-                ((zSize - 1) / 10)*10 * length
+                ((xSize - 1) / resolutionFactor)*resolutionFactor * width,
+                ((zSize - 1) / resolutionFactor)*resolutionFactor * length
             ));
         }
 
-        return getPath(start_, end.getVertex());
+        return getSmartPath(start_, end.getVertex());
     }
 
     private Stack<Vector3> buildPath(Cell end) {
