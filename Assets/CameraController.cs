@@ -6,7 +6,8 @@ using Util;
 public class CameraController : MonoBehaviour
 {
     #region Camera
-        public static CameraController instance;
+        private static CameraController cameraController;
+        public static CameraController instance { get { return cameraController; } }
         public Transform cameraTransform;
         public Transform followTransform;
         public Vector3 zoomAmount;
@@ -23,6 +24,7 @@ public class CameraController : MonoBehaviour
         public Vector2 panLimit;
     #endregion
     #region Position/Rotation/Movement
+        public Vector3 center;
         private Vector3 position;
         private Vector3 velocity;
         private Quaternion rotation;
@@ -33,8 +35,12 @@ public class CameraController : MonoBehaviour
         public float rotateRate;
     #endregion
 
+    private void Awake() {
+        cameraController = this;
+    }
+
     private void Start() {
-        instance = this;
+        center = transform.position;
         position = transform.position;
         rotation = transform.rotation;
         zoom = cameraTransform.localPosition;
@@ -50,8 +56,8 @@ public class CameraController : MonoBehaviour
             HandleInput();
         }
 
-        position.x = Mathf.Clamp(position.x, -panLimit.x, panLimit.x);
-        position.z = Mathf.Clamp(position.z, -panLimit.y, panLimit.y);
+        position.x = Mathf.Clamp(position.x, center.x-panLimit.x, center.x+panLimit.x);
+        position.z = Mathf.Clamp(position.z, center.z-panLimit.y, center.z+panLimit.y);
         zoom.y = Mathf.Clamp(zoom.y, minZoom, maxZoom);
         zoom.z = Mathf.Clamp(zoom.z, -maxZoom, -minZoom);
 

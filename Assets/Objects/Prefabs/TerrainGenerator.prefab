@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 654259984485375365}
   - component: {fileID: 3721542814933709711}
   - component: {fileID: 5329512310525667013}
+  - component: {fileID: 8260346744801940646}
   - component: {fileID: 2415576878842966015}
   m_Layer: 0
   m_Name: TerrainGenerator
@@ -80,6 +81,20 @@ MeshRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 0
+--- !u!64 &8260346744801940646
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5625062049743748058}
+  m_Material: {fileID: 0}
+  m_IsTrigger: 0
+  m_Enabled: 1
+  serializedVersion: 4
+  m_Convex: 0
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 0}
 --- !u!114 &2415576878842966015
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -99,6 +114,7 @@ MonoBehaviour:
   width: 0.1
   length: 0.1
   height: 1
+  maxHeight: 0
   terraceHeight: 0
   scale1: 0.1
   scale2: 0.2
@@ -107,6 +123,7 @@ MonoBehaviour:
   octave2: 0.25
   octave3: 0.15
   waterHeightRatio: 0
+  meshCollider: {fileID: 0}
   meshFilter: {fileID: 3721542814933709711}
   material: {fileID: 2100000, guid: a2ae05a9d42e3af468bab0022d7f8ed8, type: 2}
   gradient:

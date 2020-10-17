@@ -5,9 +5,9 @@ using UnityEngine;
 [RequireComponent(typeof(MeshFilter))]
 public class MeshGenerator : MonoBehaviour
 {
-    public static MeshGenerator instance;
-    public Navmesh navmesh;
-    public Transform[] navigators;
+    private static MeshGenerator meshGenerator;
+    public static MeshGenerator instance { get { return meshGenerator; } }
+    public static Navmesh navmesh;
     Mesh mesh;
 
     Vector3[] vertices;
@@ -24,6 +24,7 @@ public class MeshGenerator : MonoBehaviour
     public float length;
 
     public float height;
+    public float maxHeight;
     public float terraceHeight;
     public float scale1;
     public float scale2;
@@ -33,20 +34,18 @@ public class MeshGenerator : MonoBehaviour
     public float octave3;
     public float waterHeightRatio;
 
+    public MeshCollider meshCollider;
     public MeshFilter meshFilter;
     public Material material;
     public Gradient gradient;
     private Stack<Vector3>[] paths;
-    private float timer = 0f;
 
-    // Start is called before the first frame update
-    void Start() {
-        instance = this;
+    void Awake() {
+        meshGenerator = this;
         mesh = new Mesh();
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-        meshFilter.mesh = mesh;
-        Vector3 position = new Vector3(-xSize * width / 2f, 0f, -zSize * length / 2f);
-        meshFilter.transform.Translate(position, Space.World);
+        // Vector3 position = new Vector3(-xSize * width / 2f, 0f, -zSize * length / 2f);
+        // meshFilter.transform.Translate(position, Space.World);
 
         // material.SetFloat("TerraceHeight", terraceHeight);
         material.SetFloat("Height", height);
@@ -54,53 +53,56 @@ public class MeshGenerator : MonoBehaviour
         // StartCoroutine(IEnumerable CreateShapeCoroutine());
         GenerateLand();
         UpdateMesh();
+        meshFilter.mesh = mesh;
+        meshCollider.sharedMesh = mesh;
 
         navmesh = new Navmesh(vertices, xSize, zSize, width, length);
         // int testVertex = (9 * xSize / 10) * (9 * zSize / 10);
-        Vector3 testVertex = navmesh.findClosestVertex(new Vector3(24.4f, 1f, 24.4f));
-        // Debug.Log("Closest Vertex: " + testVertex.ToString());
-        paths = new Stack<Vector3>[navigators.Length];
-        int index = 0;
-        foreach (Transform navigator in navigators)
-        {
-            navigator.position = testVertex + transform.position;
-            paths[index] = navmesh.getSmartPath(testVertex, vertices[0]);
-            index ++;
-        }
+        // Vector3 testVertex = navmesh.findClosestVertex(new Vector3(24.4f, 1f, 24.4f));
+        // // Debug.Log("Closest Vertex: " + testVertex.ToString());
+        // paths = new Stack<Vector3>[navigators.Length];
+        // int index = 0;
+        // foreach (Transform navigator in navigators)
+        // {
+        //     navigator.position = testVertex + transform.position;
+        //     paths[index] = navmesh.getSmartPath(testVertex, vertices[0]);
+        //     index ++;
+        // }
         // path = navmesh.getPath(testVertex, vertices[0]);
     }
     
-    private void Update() {
-        // UpdateMesh();
+    // private void Update() {
+    //     UpdateMesh();
 
-        int index = 0;
-        if (Input.GetKeyDown("f")) {
-            // path = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
-            foreach (Transform navigator in navigators)
-            {
-                paths[index] = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
-                index ++;
-            }
-        }
+    //     int index = 0;
+    //     if (Input.GetKeyDown("f")) {
+    //         // path = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
+    //         foreach (Transform navigator in navigators)
+    //         {
+    //             paths[index] = navmesh.getRandomPath(navigator.position - transform.position, xSize, zSize, width, length);
+    //             index ++;
+    //         }
+    //     }
         
-        index = 0;
-        timer += Time.deltaTime;
-        if (timer > .25f) {
-            timer = 0f;
-            foreach (Transform navigator in navigators) {
-                if (paths[index] == null) {return;}
-                if (paths[index].Count > 0) {
-                    Vector3 pos = paths[index].Pop();
-                    navigator.position = pos + transform.position;
-                }
-                index ++;
-            }
-        }
-    }
+    //     index = 0;
+    //     timer += Time.deltaTime;
+    //     if (timer > .25f) {
+    //         timer = 0f;
+    //         foreach (Transform navigator in navigators) {
+    //             if (paths[index] == null) {return;}
+    //             if (paths[index].Count > 0) {
+    //                 Vector3 pos = paths[index].Pop();
+    //                 navigator.position = pos + transform.position;
+    //             }
+    //             index ++;
+    //         }
+    //     }
+    // }
 
     void GenerateLand() {
         vertices = new Vector3[xSize * zSize];//(xSize + 1) * (zSize + 1)];
-
+        maxHeight = height + transform.position.y;
+        Debug.Log("Max Height: " + maxHeight.ToString());
         for (int z = 0, i = 0; z < zSize; z++) {// + 1; z++) {
             for (int x = 0; x < xSize; x++, i++) {// + 1; x++, i++) {
                 float y = 1f;
@@ -178,24 +180,24 @@ public class MeshGenerator : MonoBehaviour
         //     Gizmos.color = mesh.colors[i];
         //     Gizmos.DrawSphere(drawPosition + vertices[i], .1f);
         // }
-        int index = 0;
-        foreach (Transform navigator in navigators)
-        {
-            if (paths == null || paths.Length == 0 || paths[index] == null) {return;}
-            Vector3 drawPosition = meshFilter.transform.position;
-            Vector3[] pathList = paths[index].ToArray();
-            Gizmos.color = Color.red;
-            for (int i = 0; i < pathList.Length; i++) {
-                // Gizmos.DrawSphere(drawPosition + pathList[i], .1f);
-                if (i > 0) {
-                    Gizmos.DrawLine(drawPosition + pathList[i-1], drawPosition + pathList[i]);
-                }
-                if (i > pathList.Length - 20) {
-                    Gizmos.color = Color.green;
-                }
-            }
-            index++;
-        }
+        // int index = 0;
+        // foreach (Transform navigator in navigators)
+        // {
+        //     if (paths == null || paths.Length == 0 || paths[index] == null) {return;}
+        //     Vector3 drawPosition = meshFilter.transform.position;
+        //     Vector3[] pathList = paths[index].ToArray();
+        //     Gizmos.color = Color.red;
+        //     for (int i = 0; i < pathList.Length; i++) {
+        //         // Gizmos.DrawSphere(drawPosition + pathList[i], .1f);
+        //         if (i > 0) {
+        //             Gizmos.DrawLine(drawPosition + pathList[i-1], drawPosition + pathList[i]);
+        //         }
+        //         if (i > pathList.Length - 20) {
+        //             Gizmos.color = Color.green;
+        //         }
+        //     }
+        //     index++;
+        // }
         
     }
 }
@@ -239,7 +241,6 @@ public class Navmesh {
     // Search Parameters
     private int searchLimit = 1000;
     private int intFactor = 1000;
-    private float epsilonFudge = .05f;
     private int xFudge = 500; // for resolution factor 10
     private int xFudgeHighRes = 250; // for resolution factor 5
     private int zFudge = 500; // for resolution factor 10
@@ -348,13 +349,15 @@ public class Navmesh {
     }
 
     public Stack<Vector3> getSmartPath(Vector3 start_, Vector3 end_) {
-        Vector3[] path = getPath(findClosestVertex(start_), findClosestVertex(end_)).ToArray();
+        Vector3 start = findClosestVertex(start_);
+        Vector3 end = findClosestVertex(end_);
+        Vector3[] path = getPath(start, end).ToArray();
         // Debug.Log("PATH: " + path.Length.ToString());
         if (path.Length < highResPathLength) {
-            return getPath(start_, end_, true);
+            return getPath(start, end, true);
         }
         Vector3 highResStart = path[path.Length - highResPathLength];
-        Vector3[] highResPath = getPath(highResStart, end_, true).ToArray();
+        Vector3[] highResPath = getPath(highResStart, end, true).ToArray();
         // Debug.Log("HighResPath: " + highResPath.Length.ToString());
 
         Stack<Vector3> smartPath = new Stack<Vector3>();
@@ -377,6 +380,7 @@ public class Navmesh {
         // Debug.Log("StartPOS: " + startPos.ToString() + " ENDPOS: " + endPos.ToString());
         // Debug.Log("Start: " + (start == null).ToString() + " END: " + (end == null).ToString());
         if (start == null || end == null) {
+            Debug.Log("Things have gone poorly");
             return null;
         }
 
